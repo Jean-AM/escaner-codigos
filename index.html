@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- Escáner de códigos de barras. Se publica una sola vez en una dirección https (GitHub Pages, Netlify...) y su URL
+     va en URL_ESCANER de Config.gs. Google bloquea la cámara dentro de las web apps de Apps Script, y esta página,
+     abierta en su propia pestaña, sí puede usarla. Al leer un código se lo envía al panel que la abrió. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escanear código</title>
+<style>
+html,body{margin:0;height:100%;background:#000;color:#fff;font-family:Arial,sans-serif;overflow:hidden}
+video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+#marco{position:fixed;left:50%;top:40%;width:min(82vw,440px);height:min(38vw,190px);transform:translate(-50%,-50%);
+  border:3px solid rgba(255,255,255,.9);border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55);transition:border-color .2s}
+#marco.ok{border-color:#2ecc71}
+#linea{position:absolute;left:8px;right:8px;top:50%;height:2px;background:#e74c3c;box-shadow:0 0 6px #e74c3c}
+#marco.ok #linea{display:none}
+#txt{position:fixed;left:0;right:0;bottom:16%;text-align:center;padding:0 20px;font-size:18px;font-weight:bold}
+#cerrar{position:fixed;left:50%;bottom:5%;transform:translateX(-50%);padding:10px 22px;border:0;border-radius:8px;
+  background:#fff;color:#14213d;font-weight:bold;font-size:15px}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted></video>
+<div id="marco"><div id="linea"></div></div>
+<div id="txt">Apunta el código de barras al cuadro</div>
+<button id="cerrar" onclick="window.close()">Cerrar</button>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"
+  integrity="sha384-BzBxP10ZE72aitqj5UMmUsbKFliP/DZqA8Wq+BNNhlIJDGoEd1tpkMYXOg9+n6sB" crossorigin="anonymous"></script>
+<script>
+const $ = (i) => document.getElementById(i);
+let hecho = false;
+
+function leido(codigo) {
+  if (hecho) return;
+  hecho = true;
+  codigo = String(codigo).replace(/^\*|\*$/g, '').trim();   // Code 39 puede traer los asteriscos de inicio y fin
+  $('marco').className = 'ok';
+  $('txt').textContent = '✓ Código detectado: ' + codigo;
+  setTimeout(() => enviar(codigo), 700);                    // deja ver el cuadro en verde antes de cerrar
+}
+
+function enviar(codigo) {
+  if (window.opener) {
+    window.opener.postMessage({ tipo: 'codigo', codigo }, '*');   // el código no es secreto; el panel valida quién lo envía
+    window.close();
+    return;
+  }
+  // Sin ventana que lo reciba (el navegador cortó el vínculo): se copia para pegarlo en el campo.
+  if (navigator.clipboard) navigator.clipboard.writeText(codigo).catch(() => {});
+  $('txt').textContent = 'Código ' + codigo + ' copiado. Vuelve al panel y pégalo en el campo.';
+}
+
+function sinCamara(e) {
+  $('txt').textContent = 'No se pudo abrir la cámara (' + (e && e.name) + '). Permítela con el candado de la barra de direcciones y recarga.';
+}
+
+if (window.BarcodeDetector) {                                // lector nativo (Chrome en Android): el más rápido
+  const detector = new BarcodeDetector();
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((s) => {
+    $('v').srcObject = s;
+    $('v').play();
+    setInterval(() => detector.detect($('v')).then((r) => r.length && leido(r[0].rawValue)).catch(() => {}), 250);
+  }).catch(sinCamara);
+} else {                                                     // PC y demás navegadores: ZXing
+  const hints = new Map([[ZXing.DecodeHintType.TRY_HARDER, true]]);
+  new ZXing.BrowserMultiFormatReader(hints).decodeFromConstraints({ video: { facingMode: 'environment' } }, 'v',
+    (r) => { if (r) leido(r.getText()); }).catch(sinCamara);
+}
+</script>
+</body>
+</html>
